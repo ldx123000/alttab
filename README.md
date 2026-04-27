@@ -1,160 +1,167 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS_13%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+">
-  <img src="https://img.shields.io/badge/swift-5.9%2B-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.9+">
-  <img src="https://img.shields.io/github/license/sergio-farfan/alttab-macos?style=flat-square" alt="MIT License">
-  <img src="https://img.shields.io/github/v/release/sergio-farfan/alttab-macos?style=flat-square&label=version" alt="Version">
-  <img src="https://img.shields.io/github/stars/sergio-farfan/alttab-macos?style=flat-square" alt="Stars">
+<p align="right">
+  <strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-# AltTab
-
-**Windows-style window switcher for macOS.**
+<h1 align="center">AltTab</h1>
 
 <p align="center">
-  <img src="Screenshots/AltTab1.jpg" alt="AltTab menu bar menu" width="320">
+  A small macOS window switcher that makes <kbd>Command</kbd> + <kbd>Tab</kbd> switch between windows instead of apps.
 </p>
 
-macOS Cmd-Tab switches between *applications*. AltTab switches between *windows* — just like Alt-Tab on Windows. Hold Option, tap Tab to see every open window as a thumbnail, cycle through them, and release to switch.
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-13%2B-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+">
+  <img src="https://img.shields.io/badge/Swift-swiftc-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift swiftc">
+  <img src="https://img.shields.io/badge/build-Command_Line_Tools-blue?style=flat-square" alt="Command Line Tools">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/github/stars/ldx123000/alttab?style=flat-square" alt="Stars">
+</p>
 
-## Features
+<p align="center">
+  <img src="Screenshots/AltTab1.jpg" alt="AltTab switcher" width="360">
+</p>
 
-- **Option-Tab** to activate, cycle with Tab, confirm on release
-- **Shift-Tab** / Arrow keys to navigate in reverse
-- **Escape** to cancel without switching
-- Window titles via Accessibility API — works for all apps without Screen Recording permission
-- App icon display with graceful fallback (no Screen Recording prompt on macOS 15+)
-- Includes minimized windows
-- MRU (most recently used) ordering with intra-app focus tracking
-- Menu bar utility — no Dock icon, no clutter
-- Launch at Login support (macOS 13+ SMAppService)
-- Zero dependencies — pure Swift + AppKit
-- ~2,000 lines of code, single-purpose, auditable
+## Overview
 
-## Quick Start
+AltTab is a menu bar utility for people who want the Windows-style window switching model on macOS. macOS normally uses Command-Tab to switch between applications; this app intercepts that shortcut while it is running and switches between individual windows instead.
+
+The interaction is intentionally close to the native macOS app switcher:
+
+- Tap <kbd>Command</kbd> + <kbd>Tab</kbd> quickly to switch to the next window without showing the switcher.
+- Hold <kbd>Command</kbd> after pressing <kbd>Tab</kbd> to show the switcher and continue cycling.
+- Release <kbd>Command</kbd> to activate the selected window.
+
+This project is inspired by [sergio-farfan/alttab-macos](https://github.com/sergio-farfan/alttab-macos), then adapted around a simpler local build path and Command-Tab behavior.
+
+## Highlights
+
+- Overrides native macOS Command-Tab while AltTab is running
+- Short Command-Tab tap switches immediately without opening the list
+- Hold Command-Tab to show a non-activating switcher panel
+- Includes regular and minimized windows
+- Maintains MRU window order, including intra-app focus changes
+- Uses Accessibility for titles, focus, raise, and unminimize
+- Does not use Screen Recording permission or live window capture
+- Builds with Command Line Tools and `swiftc`; no full Xcode project is required
+- No third-party dependencies
+
+## Requirements
+
+| Requirement | Version |
+| --- | --- |
+| macOS | 13.0 or later |
+| Build tools | Command Line Tools |
+| Permission | Accessibility |
+
+## Build And Install
+
+Build only:
 
 ```bash
-git clone https://github.com/sergio-farfan/alttab-macos.git
-cd alttab-macos
+./build.sh build
+```
+
+Install to `~/Applications`:
+
+```bash
 ./build.sh install
 open ~/Applications/AltTab.app
 ```
 
-Then grant **Accessibility** permission when prompted (System Settings → Privacy & Security → Accessibility).
-
-## Prerequisites
-
-| Requirement | Details |
-|-------------|---------|
-| **macOS** | 13.0+ (Ventura, Sonoma, Sequoia) |
-| **Xcode** | Full install from App Store (not just Command Line Tools) |
-
-<details>
-<summary>First time with Xcode?</summary>
-
-If you just installed Xcode, you may need to run:
-
-```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -license accept
-sudo xcodebuild -runFirstLaunch
-```
-</details>
-
-## Install
-
-### User install (recommended)
-
-Installs to `~/Applications` — no sudo required.
-
-```bash
-./build.sh install
-```
-
-### System-wide install
-
-Installs to `/Applications` — requires sudo.
+Install to `/Applications`:
 
 ```bash
 sudo ./build.sh install --system
+open /Applications/AltTab.app
 ```
 
-### Build commands
+Run directly from the build directory:
 
-| Command | Description |
-|---------|-------------|
-| `./build.sh build` | Build only (Release configuration) |
-| `./build.sh install` | Build and install to `~/Applications` |
-| `./build.sh install --system` | Build and install to `/Applications` (sudo) |
-| `./build.sh run` | Build and launch from build directory |
-| `./build.sh clean` | Remove build artifacts |
-| `./build.sh uninstall` | Remove from `~/Applications` |
-| `./build.sh uninstall --system` | Remove from `/Applications` (sudo) |
+```bash
+./build.sh run
+```
 
 ## Permissions
 
-On first launch, AltTab will prompt for Accessibility access. Screen Recording is optional.
+AltTab shows a small permission guide on first launch if Accessibility has not been granted yet. This permission is required to observe keyboard events and manage windows.
 
-| Permission | Required | Why |
-|-----------|----------|-----|
-| **Accessibility** | Yes | CGEvent tap for global hotkey detection; AXUIElement for window titles, window management, focus tracking, and unminimize |
+<p align="center">
+  <img src="Screenshots/AltTab2.jpg" alt="AltTab guide" width="360">
+</p>
 
-Grant in: **System Settings → Privacy & Security → Accessibility**
+Use the button in the guide, or grant it manually in:
 
-> **Note:** Screen Recording permission is **not required**. Window titles are read via the Accessibility API, and app icons are used instead of live thumbnails. This avoids the repeated "Screen & System Audio Recording" prompt on macOS 15 (Sequoia).
+```text
+System Settings -> Privacy & Security -> Accessibility -> AltTab
+```
 
-## Usage
+Screen Recording is not required. The switcher displays app icons and window titles instead of live window thumbnails.
+
+## Shortcuts
 
 | Shortcut | Action |
-|----------|--------|
-| <kbd>Option</kbd> + <kbd>Tab</kbd> | Open switcher, select next window |
-| <kbd>Tab</kbd> | Cycle forward (while holding Option) |
-| <kbd>Shift</kbd> + <kbd>Tab</kbd> | Cycle backward |
-| <kbd>←</kbd> <kbd>→</kbd> | Navigate left / right |
-| Release <kbd>Option</kbd> | Switch to selected window |
-| <kbd>Escape</kbd> | Cancel, dismiss switcher |
-| <kbd>Enter</kbd> | Confirm selection |
-| Click thumbnail | Select and switch |
+| --- | --- |
+| Tap <kbd>Command</kbd> + <kbd>Tab</kbd> | Switch to the next window immediately |
+| Hold <kbd>Command</kbd> + <kbd>Tab</kbd> | Open the switcher |
+| <kbd>Tab</kbd> while holding Command | Move forward |
+| <kbd>Shift</kbd> + <kbd>Tab</kbd> | Move backward |
+| <kbd>Left</kbd> / <kbd>Right</kbd> | Move selection |
+| Release <kbd>Command</kbd> | Activate selected window |
+| <kbd>Escape</kbd> | Cancel |
+| <kbd>Enter</kbd> | Confirm |
+| Click an item | Select that item |
+
+## Build Script
+
+| Command | Description |
+| --- | --- |
+| `./build.sh build` | Build a release app bundle with `swiftc` |
+| `./build.sh install` | Install to `~/Applications` |
+| `./build.sh install --system` | Install to `/Applications` |
+| `./build.sh run` | Build and launch from the build directory |
+| `./build.sh clean` | Remove build artifacts |
+| `./build.sh diagnose-hotkeys` | Show whether native Command-Tab hotkeys are disabled |
+| `./build.sh restore-hotkeys` | Restore native macOS Command-Tab hotkeys |
+| `./build.sh uninstall` | Remove the user-level install |
+| `./build.sh uninstall --system` | Remove the system-wide install |
 
 ## How It Works
 
-AltTab installs a **CGEvent tap** at the session level to intercept keyboard events globally. A 3-state machine (idle → active → idle) tracks Option hold/release and Tab presses. The event tap includes retry logic with exponential backoff to handle the case where the Accessibility subsystem isn't ready at login time. Window enumeration combines `CGWindowListCopyWindowInfo` (on-screen windows) with `AXUIElement` queries (minimized windows). Window titles are read via `AXUIElement` (`kAXTitleAttribute`), which only requires Accessibility permission — no Screen Recording needed. MRU order is maintained via `NSWorkspace` activation notifications and per-app `AXObserver` callbacks that track focused-window changes — including intra-app switches like Cmd-\`.
+AltTab installs a session-level `CGEvent` tap to observe Command, Tab, arrow, Escape, and Enter events. While the app is active, it also disables the native macOS Command-Tab symbolic hotkeys through the SkyLight private API so the system app switcher does not preempt the custom window switcher.
 
-The switcher UI is a **non-activating NSPanel** (`.nonactivatingPanel` style mask) so it floats above all windows without stealing focus. App icons are displayed for each window. Window activation uses `AXUIElement` to raise the specific window and unminimize if needed.
+Window discovery combines `CGWindowListCopyWindowInfo` for visible windows and Accessibility queries for minimized windows. MRU ordering is updated through `NSWorkspace` app activation notifications and per-app `AXObserver` focused-window notifications.
 
-## Architecture
+Window activation uses Accessibility APIs to unminimize, raise, and focus the selected window.
 
-```
-AltTab/AltTab/
-├── main.swift              # App entry point — wires NSApp delegate manually
-├── AppDelegate.swift       # Lifecycle, menu bar status item, orchestration
-├── HotkeyManager.swift     # CGEvent tap + idle/active state machine
-├── WindowModel.swift       # CGWindowList + AXUIElement enumeration, MRU tracking
-├── WindowCapture.swift     # Window thumbnail/icon capture with graceful fallback
-├── SwitcherPanel.swift     # NSPanel overlay with NSVisualEffectView backdrop
-├── ThumbnailView.swift     # Individual window cell (thumbnail + title + app name)
-├── WindowActivator.swift   # AXUIElement window raise / unminimize / focus
-├── PermissionManager.swift # Accessibility & Screen Recording permission checks
-└── PreferencesMenu.swift   # Status bar menu (Launch at Login, Quit)
-```
+## Recovery
 
-## Uninstall
+If the app exits unexpectedly and macOS Command-Tab does not come back, restore the native shortcuts manually:
 
 ```bash
-./build.sh uninstall                # Remove from ~/Applications
-sudo ./build.sh uninstall --system  # Remove from /Applications
+./build.sh restore-hotkeys
 ```
 
-Or manually delete `AltTab.app` and remove from Login Items in System Settings.
+To inspect the current state:
 
-## Contributing
+```bash
+./build.sh diagnose-hotkeys
+```
 
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Make your changes
-4. Test: `./build.sh run`
-5. Commit and push
-6. Open a Pull Request
+## Project Layout
+
+```text
+AltTab/AltTab/
+├── main.swift              # App entry point and hotkey restoration hooks
+├── AppDelegate.swift       # Lifecycle, status item, and switcher orchestration
+├── HotkeyManager.swift     # Global event tap and shortcut state machine
+├── NativeCommandTab.swift  # Disable/restore native Command-Tab
+├── WindowModel.swift       # Window enumeration and MRU tracking
+├── WindowActivator.swift   # Raise, focus, and unminimize windows
+├── SwitcherPanel.swift     # Floating switcher panel
+├── ThumbnailView.swift     # Window item view
+├── PermissionManager.swift # Accessibility permission flow
+└── PreferencesMenu.swift   # Menu bar actions
+```
 
 ## License
 
-[MIT](LICENSE) — Sergio Farfan (sergio.farfan@gmail.com)
+MIT. See [LICENSE](./LICENSE).

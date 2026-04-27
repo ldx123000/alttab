@@ -2,8 +2,8 @@
 set -euo pipefail
 
 APP_NAME="AltTab"
-SCHEME="AltTab"
 CONFIG="Release"
+DEPLOYMENT_TARGET="13.0"
 PROJECT_DIR="$(cd "$(dirname "$0")/AltTab" && pwd)"
 BUILD_DIR="${PROJECT_DIR}/build"
 APP_PATH="${BUILD_DIR}/Build/Products/${CONFIG}/${APP_NAME}.app"
@@ -20,6 +20,8 @@ Commands:
   install     Build and install to ~/Applications (user-level)
   run         Build and launch immediately
   clean       Remove build artifacts
+  diagnose-hotkeys  Print native Command-Tab enabled state
+  restore-hotkeys  Re-enable native macOS Command-Tab shortcuts
   uninstall   Remove installed app and kill running instance
 
 Options:
@@ -30,6 +32,8 @@ Examples:
   ./build.sh install                # Build and install to ~/Applications
   sudo ./build.sh install --system  # Build and install to /Applications
   ./build.sh run                    # Build and launch from build dir
+  ./build.sh diagnose-hotkeys       # Show whether native Command-Tab is enabled
+  ./build.sh restore-hotkeys        # Restore native Command-Tab if needed
   ./build.sh uninstall              # Remove from ~/Applications
   sudo ./build.sh uninstall --system  # Remove from /Applications
 
@@ -44,31 +48,57 @@ for arg in "$@"; do
     fi
 done
 
-check_xcode() {
-    if ! command -v xcodebuild &>/dev/null; then
-        echo "Error: xcodebuild not found. Install Xcode from the App Store."
+check_clt() {
+    if ! command -v swiftc &>/dev/null; then
+        echo "Error: swiftc not found. Install Command Line Tools:"
+        echo "  xcode-select --install"
         exit 1
     fi
-    # Verify full Xcode, not just Command Line Tools
-    local dev_dir
-    dev_dir="$(xcode-select -p 2>/dev/null)"
-    if [[ "$dev_dir" == */CommandLineTools ]]; then
-        echo "Error: Full Xcode required (not just Command Line Tools)."
-        echo "  Install Xcode from App Store, then run:"
-        echo "  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    if ! xcrun --sdk macosx --show-sdk-path &>/dev/null; then
+        echo "Error: macOS SDK not found. Install Command Line Tools:"
+        echo "  xcode-select --install"
         exit 1
     fi
 }
 
 do_build() {
-    check_xcode
-    echo "Building ${APP_NAME} (${CONFIG})..."
-    cd "$PROJECT_DIR"
-    xcodebuild \
-        -scheme "$SCHEME" \
-        -configuration "$CONFIG" \
-        -derivedDataPath "$BUILD_DIR" \
-        build 2>&1 | tail -5
+    check_clt
+
+    local sdk_path
+    local arch
+    local binary_path
+    local codesign_output
+    sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+    arch="$(uname -m)"
+    binary_path="${APP_PATH}/Contents/MacOS/${APP_NAME}"
+
+    echo "Building ${APP_NAME} (${CONFIG}) with swiftc..."
+    rm -rf "$APP_PATH"
+    mkdir -p "${APP_PATH}/Contents/MacOS"
+
+    swiftc \
+        -Osize \
+        -whole-module-optimization \
+        -sdk "$sdk_path" \
+        -F "${sdk_path}/System/Library/PrivateFrameworks" \
+        -framework SkyLight \
+        -target "${arch}-apple-macos${DEPLOYMENT_TARGET}" \
+        -module-name "$APP_NAME" \
+        "${PROJECT_DIR}/${APP_NAME}"/*.swift \
+        -o "$binary_path"
+
+    strip -S -x "$binary_path"
+
+    cp "${PROJECT_DIR}/${APP_NAME}/Info.plist" "${APP_PATH}/Contents/Info.plist"
+    plutil -lint "${APP_PATH}/Contents/Info.plist" >/dev/null
+    if ! codesign_output="$(codesign \
+        --force \
+        --sign - \
+        --timestamp=none \
+        "$APP_PATH" 2>&1)"; then
+        echo "$codesign_output"
+        exit 1
+    fi
 
     echo ""
     echo "Build succeeded: ${APP_PATH}"
@@ -112,9 +142,26 @@ do_clean() {
     echo "Done."
 }
 
+do_restore_hotkeys() {
+    echo "Restoring native macOS Command-Tab shortcuts..."
+    swift -e 'import CoreGraphics; @_silgen_name("CGSSetSymbolicHotKeyEnabled") func setHotKey(_ h: Int, _ e: Bool) -> CGError; _ = setHotKey(1, true); _ = setHotKey(2, true)'
+    echo "Done."
+}
+
+do_diagnose_hotkeys() {
+    echo "AltTab process:"
+    pgrep -fl "${APP_NAME}.app/Contents/MacOS/${APP_NAME}" || true
+    echo ""
+    echo "Native macOS hotkeys:"
+    swift -e 'import CoreGraphics; @_silgen_name("CGSIsSymbolicHotKeyEnabled") func isEnabled(_ h: Int) -> Bool; @_silgen_name("CGSGetSymbolicHotKeyValue") func value(_ h: Int, _ o: UnsafeMutablePointer<UInt32>, _ k: UnsafeMutablePointer<UInt32>, _ m: UnsafeMutablePointer<UInt32>) -> CGError; for h in [1, 2, 6] { var o: UInt32 = 0; var k: UInt32 = 0; var m: UInt32 = 0; _ = value(h, &o, &k, &m); print("  id=\(h) enabled=\(isEnabled(h)) key=\(k) modifiers=\(m)") }'
+    echo ""
+    echo "Expected while AltTab is active: id=1 and id=2 enabled=false."
+}
+
 do_uninstall() {
     echo "Uninstalling ${APP_NAME} from ${INSTALL_DIR}..."
     pkill -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
+    do_restore_hotkeys
     rm -rf "${INSTALL_DIR}/${APP_NAME}.app"
     echo "Removed ${APP_NAME} from ${INSTALL_DIR}."
     echo "Note: You may want to remove it from Login Items in System Settings."
@@ -134,6 +181,8 @@ case "$CMD" in
     install)   do_install ;;
     run)       do_run ;;
     clean)     do_clean ;;
+    diagnose-hotkeys) do_diagnose_hotkeys ;;
+    restore-hotkeys) do_restore_hotkeys ;;
     uninstall) do_uninstall ;;
     -h|--help|help) usage ;;
     *)

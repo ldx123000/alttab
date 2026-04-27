@@ -37,16 +37,8 @@ enum WindowActivator {
     // MARK: - Unminimize
 
     private static func unminimize(window: WindowInfo) {
-        let axApp = AXUIElementCreateApplication(window.ownerPID)
-        var windowsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-              let axWindows = windowsRef as? [AXUIElement] else { return }
-
-        for axWindow in axWindows {
-            var windowID: CGWindowID = 0
-            _ = _AXUIElementGetWindow(axWindow, &windowID)
-
-            if windowID == window.windowID {
+        for axWindow in axWindows(for: window.ownerPID) {
+            if cgWindowID(for: axWindow) == window.windowID {
                 AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, false as CFTypeRef)
                 break
             }
@@ -56,40 +48,44 @@ enum WindowActivator {
     // MARK: - Raise Window
 
     private static func raiseWindow(window: WindowInfo) {
-        let axApp = AXUIElementCreateApplication(window.ownerPID)
-        var windowsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-              let axWindows = windowsRef as? [AXUIElement] else { return }
+        let axWindows = axWindows(for: window.ownerPID)
 
         // Try to match by CGWindowID first
         for axWindow in axWindows {
-            var windowID: CGWindowID = 0
-            _ = _AXUIElementGetWindow(axWindow, &windowID)
-
-            if windowID == window.windowID {
-                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-                AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, true as CFTypeRef)
+            if cgWindowID(for: axWindow) == window.windowID {
+                focus(axWindow)
                 return
             }
         }
 
-        // Fallback: match by title + approximate bounds
+        // Fallback: match by title
         for axWindow in axWindows {
             var titleRef: CFTypeRef?
             AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleRef)
             let title = titleRef as? String ?? ""
 
             if title == window.windowTitle && !title.isEmpty {
-                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-                AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, true as CFTypeRef)
+                focus(axWindow)
                 return
             }
         }
 
         // Last resort: raise the first window
         if let firstWindow = axWindows.first {
-            AXUIElementPerformAction(firstWindow, kAXRaiseAction as CFString)
-            AXUIElementSetAttributeValue(firstWindow, kAXMainAttribute as CFString, true as CFTypeRef)
+            focus(firstWindow)
         }
+    }
+
+    private static func axWindows(for pid: pid_t) -> [AXUIElement] {
+        let axApp = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let axWindows = windowsRef as? [AXUIElement] else { return [] }
+        return axWindows
+    }
+
+    private static func focus(_ axWindow: AXUIElement) {
+        AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, true as CFTypeRef)
     }
 }

@@ -2,8 +2,8 @@
 //  ThumbnailView.swift
 //  AltTab — Windows-style Window Switcher for macOS
 //
-//  A single window cell in the switcher strip. Displays the window thumbnail
-//  (or app icon fallback), window title, and application name. Highlights the
+//  A single window cell in the switcher strip. Displays the app icon,
+//  window title, and application name. Highlights the
 //  selected cell with an accent-colored border and subtle background tint.
 //  Supports mouse hover and click interaction for direct window selection.
 //
@@ -27,11 +27,8 @@ final class ThumbnailView: NSView {
     private let titleLabel: NSTextField
     private let appLabel: NSTextField
     private let selectionBorder: NSView
-    private let thumbnailHeight: CGFloat
 
     init(windowInfo: WindowInfo, width: CGFloat, height: CGFloat) {
-        self.thumbnailHeight = height - 50 // Reserve space for labels
-
         imageView = NSImageView()
         titleLabel = NSTextField(labelWithString: "")
         appLabel = NSTextField(labelWithString: "")
@@ -51,6 +48,7 @@ final class ThumbnailView: NSView {
 
     private func setupViews(width: CGFloat, height: CGFloat) {
         wantsLayer = true
+        let thumbnailHeight = height - 50 // Reserve space for labels
 
         // Selection border
         selectionBorder.wantsLayer = true
@@ -121,15 +119,9 @@ final class ThumbnailView: NSView {
         titleLabel.stringValue = windowInfo.windowTitle.isEmpty ? windowInfo.ownerName : windowInfo.windowTitle
         appLabel.stringValue = windowInfo.ownerName
 
-        if let thumbnail = windowInfo.thumbnail {
-            imageView.image = thumbnail
-        } else {
-            // Fallback: app icon
-            let icon = windowInfo.appIcon
-            imageView.image = icon
-            if windowInfo.isMinimized {
-                imageView.alphaValue = 0.7
-            }
+        imageView.image = windowInfo.appIcon
+        if windowInfo.isMinimized {
+            imageView.alphaValue = 0.7
         }
     }
 

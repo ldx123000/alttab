@@ -3,9 +3,7 @@
 //  AltTab — Windows-style Window Switcher for macOS
 //
 //  Manages macOS permission requirements. Checks and prompts for Accessibility
-//  access (required for CGEvent taps and AXUIElement window management) with
-//  a polling timer that posts a notification when granted. Detects Screen
-//  Recording permission by probing CGWindowListCopyWindowInfo for window names.
+//  access, polling only while the permission guide is waiting for a grant.
 //
 //  Author:  Sergio Farfan <sergio.farfan@gmail.com>
 //  Version: 1.1.0
@@ -18,56 +16,53 @@ import ApplicationServices
 
 final class PermissionManager {
 
-    private var pollTimer: Timer?
+    var onAccessibilityGranted: (() -> Void)?
+
+    private var permissionTimer: Timer?
+    private var permissionWindow: PermissionWindow?
+
+    private let grantPollingInterval: TimeInterval = 0.5
 
     /// Checks Accessibility permission, prompting if needed, and polls until granted.
     func ensureAccessibility() {
-        let trusted = AXIsProcessTrusted()
-        if !trusted {
-            promptForAccessibility()
-            startPolling()
+        if AXIsProcessTrusted() {
+            onAccessibilityGranted?()
+            return
         }
+
+        showPermissionWindow()
+        startPolling()
     }
 
-    /// Shows the system prompt for Accessibility permission.
-    private func promptForAccessibility() {
+    private func showPermissionWindow() {
+        if permissionWindow == nil {
+            permissionWindow = PermissionWindow { [weak self] in
+                self?.requestAccessibilityPrompt()
+            }
+        }
+        permissionWindow?.updatePermissionStatus(isTrusted: false)
+        permissionWindow?.show()
+    }
+
+    private func requestAccessibilityPrompt() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Polls every 2 seconds until Accessibility is granted.
+    /// Polls only while the permission guide is open, until Accessibility is granted.
     private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
-            if AXIsProcessTrusted() {
-                timer.invalidate()
-                self?.pollTimer = nil
-                NotificationCenter.default.post(name: .accessibilityGranted, object: nil)
-            }
+        permissionTimer?.invalidate()
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: grantPollingInterval, repeats: true) { [weak self] timer in
+            guard let self = self else { return }
+            let isTrusted = AXIsProcessTrusted()
+            self.permissionWindow?.updatePermissionStatus(isTrusted: isTrusted)
+            guard isTrusted else { return }
+            timer.invalidate()
+            self.permissionTimer = nil
+            self.permissionWindow?.updatePermissionStatus(isTrusted: true)
+            self.permissionWindow?.closeAfterPermissionGranted()
+            self.onAccessibilityGranted?()
         }
     }
 
-    /// Cached result of the Screen Recording permission probe.
-    /// Checked once at first access to avoid re-triggering the macOS 15
-    /// "Screen & System Audio Recording" prompt on every Option+Tab.
-    private static var _screenRecordingCached: Bool?
-
-    static var hasScreenRecordingPermission: Bool {
-        if let cached = _screenRecordingCached { return cached }
-        let result = probeScreenRecordingPermission()
-        _screenRecordingCached = result
-        return result
-    }
-
-    /// Probes Screen Recording permission by checking if CGWindowList returns window names.
-    /// This may trigger a one-time system prompt on macOS 15+.
-    private static func probeScreenRecordingPermission() -> Bool {
-        let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[CFString: Any]]
-        guard let list = windowList, let first = list.first else { return false }
-        return first[kCGWindowName] != nil
-    }
-
-}
-
-extension Notification.Name {
-    static let accessibilityGranted = Notification.Name("com.alttab.accessibilityGranted")
 }

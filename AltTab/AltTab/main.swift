@@ -13,6 +13,26 @@
 //
 
 import Cocoa
+import Darwin
+import Dispatch
+
+atexit {
+    NativeCommandTab.setEnabled(true)
+}
+
+private var signalSources: [DispatchSourceSignal] = []
+
+for signalNumber in [SIGINT, SIGTERM] {
+    signal(signalNumber, SIG_IGN)
+
+    let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+    source.setEventHandler {
+        NativeCommandTab.setEnabled(true)
+        exit(0)
+    }
+    source.resume()
+    signalSources.append(source)
+}
 
 let app = NSApplication.shared
 let delegate = AppDelegate()

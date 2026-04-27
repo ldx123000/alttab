@@ -4,8 +4,8 @@
 //
 //  Application lifecycle and orchestration. Sets up the menu bar status item,
 //  manages permissions, and coordinates the hotkey manager, window model,
-//  thumbnail capture, and switcher panel. Implements HotkeyDelegate to
-//  respond to Option-Tab state machine transitions.
+//  and switcher panel. Implements HotkeyDelegate to respond to Command-Tab
+//  state machine transitions.
 //
 //  Author:  Sergio Farfan <sergio.farfan@gmail.com>
 //  Version: 1.1.0
@@ -14,21 +14,28 @@
 //
 
 import Cocoa
-import ServiceManagement
 
-class AppDelegate: NSObject, NSApplicationDelegate, HotkeyDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyDelegate {
+
+    private enum SwitcherState {
+        case inactive
+        case pendingReveal
+        case visible
+    }
 
     private var statusItem: NSStatusItem!
     private var preferencesMenu: PreferencesMenu!
     private var hotkeyManager: HotkeyManager!
-    private var windowModel: WindowModel!
-    private var windowCapture: WindowCapture!
+    private var windowModel: WindowModel?
     private var switcherPanel: SwitcherPanel!
     private var permissionManager: PermissionManager!
 
     private var currentWindows: [WindowInfo] = []
     private var selectedIndex: Int = 0
-    private var switcherActive: Bool = false
+    private var switcherState: SwitcherState = .inactive
+    private var revealSwitcherWorkItem: DispatchWorkItem?
+
+    private let switcherRevealDelay: TimeInterval = 0.18
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSLog("AltTab: applicationDidFinishLaunching")
@@ -36,38 +43,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyDelegate {
 
         setupStatusItem()
         permissionManager = PermissionManager()
+        permissionManager.onAccessibilityGranted = { [weak self] in
+            self?.startHotkeyWhenPermissionsAreReady()
+        }
 
-        windowModel = WindowModel()
-        windowCapture = WindowCapture()
         switcherPanel = SwitcherPanel()
 
         hotkeyManager = HotkeyManager()
         hotkeyManager.delegate = self
 
-        if AXIsProcessTrusted() {
-            hotkeyManager.start()
-            NSLog("AltTab: Accessibility already granted, hotkey active")
-        } else {
-            // At login the TCC daemon may not be ready yet, causing a false negative.
-            // Wait briefly and recheck before prompting the user.
-            NSLog("AltTab: Accessibility not yet trusted, will recheck before prompting")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                guard let self = self else { return }
-                if AXIsProcessTrusted() {
-                    NSLog("AltTab: Accessibility granted after brief wait, hotkey active")
-                    self.hotkeyManager.start()
-                } else {
-                    NSLog("AltTab: Accessibility still not trusted, prompting user")
-                    self.permissionManager.ensureAccessibility()
-                    NotificationCenter.default.addObserver(
-                        forName: .accessibilityGranted, object: nil, queue: .main
-                    ) { [weak self] _ in
-                        NSLog("AltTab: Accessibility granted, starting hotkey manager")
-                        self?.hotkeyManager.start()
-                    }
-                }
-            }
+        // At login the TCC daemon may not be ready yet, causing a false negative.
+        // Wait briefly before prompting for permissions.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.startHotkeyWhenPermissionsAreReady()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        NativeCommandTab.setEnabled(true)
+    }
+
+    private func startHotkeyWhenPermissionsAreReady() {
+        guard AXIsProcessTrusted() else {
+            NSLog("AltTab: Accessibility not trusted, prompting user")
+            permissionManager.ensureAccessibility()
+            return
+        }
+
+        if windowModel == nil {
+            windowModel = WindowModel()
+        }
+        hotkeyManager.start()
+        NSLog("AltTab: Permissions granted, hotkey active")
+    }
+
+    private func handleAccessibilityRevoked() {
+        NSLog("AltTab: Accessibility permission revoked, disabling hotkeys")
+        dismissSwitcher()
+        currentWindows.removeAll()
+        hotkeyManager.stop()
+        windowModel = nil
+        NativeCommandTab.setEnabled(true)
     }
 
     // MARK: - Status Bar
@@ -81,7 +97,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyDelegate {
                 button.image = img
             } else {
                 // Fallback if SF Symbol unavailable
-                button.title = "⌥⇥"
+                button.title = "⌘⇥"
             }
         }
         preferencesMenu = PreferencesMenu()
@@ -92,41 +108,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyDelegate {
     // MARK: - HotkeyDelegate
 
     func hotkeyDidActivate() {
+        guard let windowModel = windowModel else { return }
         currentWindows = windowModel.enumerateWindows()
         guard !currentWindows.isEmpty else { return }
         selectedIndex = min(1, currentWindows.count - 1) // start on second window (MRU)
-        switcherActive = true
+        switcherState = .pendingReveal
 
-        // Capture thumbnails asynchronously
-        windowCapture.captureThumbnails(for: currentWindows) { [weak self] updatedWindows in
-            guard let self = self else { return }
-            self.currentWindows = updatedWindows
-            DispatchQueue.main.async {
-                // Only update if switcher is still active — avoids re-showing after dismiss
-                guard self.switcherActive else { return }
-                self.switcherPanel.show(windows: self.currentWindows,
-                                        selectedIndex: self.selectedIndex)
-            }
+        revealSwitcherWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.showSwitcherPanel()
         }
-
-        // Show immediately with placeholder icons
-        switcherPanel.show(windows: currentWindows, selectedIndex: selectedIndex)
+        revealSwitcherWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + switcherRevealDelay, execute: workItem)
     }
 
     func hotkeyDidCycleNext() {
         guard !currentWindows.isEmpty else { return }
         selectedIndex = (selectedIndex + 1) % currentWindows.count
-        switcherPanel.updateSelection(index: selectedIndex)
+        updateOrRevealSwitcher()
     }
 
     func hotkeyDidCyclePrevious() {
         guard !currentWindows.isEmpty else { return }
         selectedIndex = (selectedIndex - 1 + currentWindows.count) % currentWindows.count
-        switcherPanel.updateSelection(index: selectedIndex)
+        updateOrRevealSwitcher()
     }
 
     func hotkeyDidConfirm() {
-        guard switcherActive, !currentWindows.isEmpty,
+        guard switcherState != .inactive, !currentWindows.isEmpty,
               selectedIndex < currentWindows.count else {
             dismissSwitcher()
             return
@@ -134,15 +143,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, HotkeyDelegate {
         let window = currentWindows[selectedIndex]
         dismissSwitcher()
         WindowActivator.activate(window: window)
-        windowModel.promoteToFront(windowID: window.windowID)
+        windowModel?.promoteToFront(windowID: window.windowID)
     }
 
     func hotkeyDidCancel() {
         dismissSwitcher()
     }
 
+    func hotkeyAccessibilityWasRevoked() {
+        handleAccessibilityRevoked()
+        permissionManager.ensureAccessibility()
+    }
+
     private func dismissSwitcher() {
-        switcherActive = false
+        revealSwitcherWorkItem?.cancel()
+        revealSwitcherWorkItem = nil
+        switcherState = .inactive
         switcherPanel.dismiss()
+    }
+
+    private func updateOrRevealSwitcher() {
+        switch switcherState {
+        case .visible:
+            switcherPanel.updateSelection(index: selectedIndex)
+        case .pendingReveal:
+            showSwitcherPanel()
+        case .inactive:
+            break
+        }
+    }
+
+    private func showSwitcherPanel() {
+        guard switcherState == .pendingReveal, !currentWindows.isEmpty else { return }
+        revealSwitcherWorkItem?.cancel()
+        revealSwitcherWorkItem = nil
+        switcherState = .visible
+        switcherPanel.show(windows: currentWindows, selectedIndex: selectedIndex)
     }
 }

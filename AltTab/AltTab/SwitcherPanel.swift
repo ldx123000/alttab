@@ -4,7 +4,7 @@
 //
 //  The overlay UI that displays window thumbnails in a horizontal strip.
 //  Built as an NSPanel with .nonactivatingPanel style mask so it floats
-//  above all windows without stealing focus — critical for the Option-release
+//  above all windows without stealing focus — critical for the Command-release
 //  activation flow. Uses NSVisualEffectView with .hudWindow material for
 //  the semi-transparent backdrop, and an NSScrollView wrapping a horizontal
 //  NSStackView of ThumbnailView cells.
@@ -29,8 +29,8 @@ final class SwitcherPanel: NSPanel {
     private var thumbnailViews: [ThumbnailView] = []
     private var selectedIndex: Int = 0
 
-    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
-        super.init(contentRect: contentRect,
+    init() {
+        super.init(contentRect: .zero,
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered,
                    defer: false)
@@ -45,10 +45,6 @@ final class SwitcherPanel: NSPanel {
         self.ignoresMouseEvents = false
 
         setupUI()
-    }
-
-    convenience init() {
-        self.init(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
     }
 
     // MARK: - UI Setup
@@ -107,7 +103,7 @@ final class SwitcherPanel: NSPanel {
             let view = ThumbnailView(windowInfo: windowInfo, width: itemWidth, height: itemHeight)
             view.isSelected = (index == selectedIndex)
             view.onClicked = { [weak self] in
-                self?.handleClick(index: index)
+                self?.updateSelection(index: index)
             }
             stackView.addArrangedSubview(view)
             thumbnailViews.append(view)
@@ -150,19 +146,7 @@ final class SwitcherPanel: NSPanel {
         let view = thumbnailViews[selectedIndex]
         scrollView.contentView.scrollToVisible(view.frame)
     }
-
-    private func handleClick(index: Int) {
-        updateSelection(index: index)
-        // Notify delegate through responder chain — AppDelegate handles it
-        NotificationCenter.default.post(name: .switcherClickedWindow, object: nil,
-                                        userInfo: ["index": index])
-    }
-
     // Allow mouse interaction even though we're non-activating
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
-}
-
-extension Notification.Name {
-    static let switcherClickedWindow = Notification.Name("com.alttab.switcherClickedWindow")
 }
