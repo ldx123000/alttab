@@ -60,6 +60,13 @@ AltTab 是一个菜单栏工具，目标是在 macOS 上提供更接近 Windows 
 ./build.sh build
 ```
 
+构建 DMG 安装包：
+
+```bash
+./build.sh dmg
+open AltTab/build/dist/AltTab-1.0.dmg
+```
+
 安装到 `~/Applications`：
 
 ```bash
@@ -115,6 +122,7 @@ open /Applications/AltTab.app
 | 命令 | 说明 |
 | --- | --- |
 | `./build.sh build` | 使用 `swiftc` 构建 Release app bundle |
+| `./build.sh dmg` | 构建包含 `AltTab.app` 和 Applications 快捷方式的 DMG |
 | `./build.sh install` | 安装到 `~/Applications` |
 | `./build.sh install --system` | 安装到 `/Applications` |
 | `./build.sh run` | 构建并从构建目录启动 |

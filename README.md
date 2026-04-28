@@ -60,6 +60,13 @@ Build only:
 ./build.sh build
 ```
 
+Build a DMG:
+
+```bash
+./build.sh dmg
+open AltTab/build/dist/AltTab-1.0.dmg
+```
+
 Install to `~/Applications`:
 
 ```bash
@@ -115,6 +122,7 @@ Screen Recording is not required. The switcher displays app icons and window tit
 | Command | Description |
 | --- | --- |
 | `./build.sh build` | Build a release app bundle with `swiftc` |
+| `./build.sh dmg` | Build a distributable DMG with `AltTab.app` and an Applications shortcut |
 | `./build.sh install` | Install to `~/Applications` |
 | `./build.sh install --system` | Install to `/Applications` |
 | `./build.sh run` | Build and launch from the build directory |

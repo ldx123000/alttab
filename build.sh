@@ -7,6 +7,7 @@ DEPLOYMENT_TARGET="13.0"
 PROJECT_DIR="$(cd "$(dirname "$0")/AltTab" && pwd)"
 BUILD_DIR="${PROJECT_DIR}/build"
 APP_PATH="${BUILD_DIR}/Build/Products/${CONFIG}/${APP_NAME}.app"
+DIST_DIR="${BUILD_DIR}/dist"
 
 # Default install to ~/Applications (no sudo needed); use --system for /Applications
 INSTALL_DIR="${HOME}/Applications"
@@ -17,6 +18,7 @@ Usage: $(basename "$0") [command] [options]
 
 Commands:
   build       Build the app (Release configuration)
+  dmg         Build a distributable DMG
   install     Build and install to ~/Applications (user-level)
   run         Build and launch immediately
   clean       Remove build artifacts
@@ -29,6 +31,7 @@ Options:
 
 Examples:
   ./build.sh build                  # Build only
+  ./build.sh dmg                    # Build AltTab.dmg
   ./build.sh install                # Build and install to ~/Applications
   sudo ./build.sh install --system  # Build and install to /Applications
   ./build.sh run                    # Build and launch from build dir
@@ -128,6 +131,46 @@ do_install() {
     echo "  Grant Accessibility:  System Settings → Privacy & Security → Accessibility → AltTab ON"
 }
 
+do_dmg() {
+    do_build
+
+    if ! command -v hdiutil &>/dev/null; then
+        echo "Error: hdiutil not found. DMG packaging requires macOS hdiutil."
+        exit 1
+    fi
+
+    local version
+    local staging_dir
+    local dmg_path
+    version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_PATH}/Contents/Info.plist" 2>/dev/null || echo "1.0")"
+    staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}.dmg.XXXXXX")"
+    dmg_path="${DIST_DIR}/${APP_NAME}-${version}.dmg"
+    trap "rm -rf $(printf "%q" "$staging_dir")" EXIT
+
+    echo "Packaging ${APP_NAME} ${version} as DMG..."
+    mkdir -p "$staging_dir" "$DIST_DIR"
+    cp -R "$APP_PATH" "$staging_dir/"
+    ln -s /Applications "${staging_dir}/Applications"
+    rm -f "$dmg_path"
+
+    hdiutil create \
+        -volname "$APP_NAME" \
+        -srcfolder "$staging_dir" \
+        -format UDZO \
+        -ov \
+        "$dmg_path" >/dev/null
+
+    hdiutil verify "$dmg_path" >/dev/null
+    rm -rf "$staging_dir"
+    trap - EXIT
+
+    echo ""
+    echo "DMG created: ${dmg_path}"
+    echo ""
+    echo "Install:"
+    echo "  Open the DMG, then drag ${APP_NAME}.app to Applications."
+}
+
 do_run() {
     do_build
     pkill -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
@@ -178,6 +221,7 @@ done
 
 case "$CMD" in
     build)     do_build ;;
+    dmg)       do_dmg ;;
     install)   do_install ;;
     run)       do_run ;;
     clean)     do_clean ;;
